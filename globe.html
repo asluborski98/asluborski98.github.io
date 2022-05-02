@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script src="https://d3js.org/d3.v3.min.js"></script>
+  <script src="https://d3js.org/topojson.v1.min.js"></script>
+  <script src="https://d3js.org/queue.v1.min.js"></script>
+
+  <style>
+
+div.tooltip-mark {
+     position: absolute;
+     text-align: center;
+     padding: .5rem;
+     background: #FFFFFF;
+     color: #313639;
+     border: 1px solid #313639;
+     border-radius: 8px;
+     pointer-events: none;
+     font-size: 1.3rem;
+}
+    .land {
+      fill: #19801e;
+      stroke: black;
+    }
+    
+    .water {
+      fill: #00248F;
+    }
+    
+    .point {
+      fill: #f00;
+    }
+  </style>
+
+</head>
+
+<body>
+
+    
+
+  <script>
+    var width = 960,
+      height = 500,
+      sens = 0.25;
+
+    var div = d3.select("body").append("div")
+      .attr("class", "tooltip-mark")
+      .style("opacity", 0);
+    var proj = d3.geo.orthographic()
+      .scale(220)
+      .translate([width / 2, height / 2])
+      .clipAngle(90);
+
+    var path = d3.geo.path().projection(proj).pointRadius(function(d) {
+      return 6
+    });
+
+    var svg = d3.select('body').append('svg')
+      .attr('width', width)
+      .attr('height', height);
+
+    var g = svg.append('g');
+
+    queue()
+      .defer(d3.json, 'https://unpkg.com/world-atlas@1/world/110m.json')
+      .defer(d3.json, 'globe_data/disdata.json')
+      .await(ready);
+
+    function ready(error, world, locations) {
+
+      g.append('path')
+        .datum({
+          type: 'Sphere'
+        })
+        .attr('class', 'water')
+        .attr('d', path);
+
+      g.selectAll('g.land')
+        .data(topojson.feature(world, world.objects.countries).features)
+        .enter().append('path')
+        .attr('class', 'land')
+        .attr('d', path)
+        .call(d3.behavior.drag()
+          .origin(function() {
+            var r = proj.rotate();
+            return {
+              x: r[0] / sens,
+              y: -r[1] / sens
+            };
+          })
+          .on('drag', function(d) {
+            var rotate = proj.rotate();
+            proj.rotate([d3.event.x * sens, -d3.event.y * sens, rotate[2]]);
+            g.selectAll('.land').attr('d', path);
+            
+
+            nodes.each(function(d, i) {
+              var self = d3.select(this),
+                  lon_lat = [d.Longitude, d.Latitude];
+                  proj_pos = proj(lon_lat);
+                  
+              var hasPath = path({
+                type: "Point",
+                coordinates: lon_lat
+              }) != undefined;
+
+              if (hasPath) {
+                self.style("display","inline")
+                self.attr("transform", 'translate(' + proj_pos[0] + ',' + proj_pos[1] + ')');
+              }
+              else {
+                self.style("display","none")
+              }
+            });
+          }));
+
+          
+      var nodes = g.selectAll('g.node')
+        .data(locations)
+        .enter().append('g').attr('class', 'node')
+        .attr('transform', function(d) {
+          var proj_pos = proj([d.Longitude, d.Latitude]);
+          return 'translate(' + proj_pos[0] + ',' + proj_pos[1] + ')';
+        })
+        .attr('style', 'cursor: pointer')
+        .attr("d", path);
+          
+      nodes.append("svg:image")
+        .attr('transform', 'translate(-24, -20)')
+        .attr('width', 20)
+        .attr('height', 24)
+        .classed('white', true)
+        .attr("xlink:href", function(d){
+          if(d.Disaster_Type.toString() === "Flood"){
+            return "globe_data/flood_marker.svg";
+          }
+          else if(d.Disaster_Type.toString() == "Storm"){
+            return "globe_data/storm_marker.svg";
+          }
+          else if(d.Disaster_Type.toString() == "Earthquake"){
+            return "globe_data/earthquake_marker.svg";
+          }
+          else if(d.Disaster_Type.toString() == "Volcanic activity"){
+            return "globe_data/volcano_marker.svg";
+          }
+          else{
+            return "globe_data/marker.svg";
+          }
+        });
+    
+      nodes.on('mouseover',function (d, i)
+      {
+          d3.select(this).transition()
+                .duration('50')
+                .attr('opacity','.25');
+          div.transition()
+                .duration('50')
+                .style("opacity",1);
+          let text = d.Disaster_Type.toString() + "<br />" + "Subtype: " + d.Disaster_Subtype.toString() + "<br />" + "Country: " + d.Country.toString() + "<br />" + "Area: " +  d.Location.toString() + "<br />" + "Deaths: " +  d.Total_Deaths + "<br />" +  "Injured: " + d.No_Injured
+          if (text.includes("null"))
+          {
+            text = text.replace("null", "Not available")
+          }
+          div.html(text)
+                .style("left", (d3.event.pageX + 10) + "px")
+                .style("top", (d3.event.pageY - 15) + "px")
+                .attr("data-html","true")
+                
+      })  
+      nodes.on('mouseout', function (d, i) {
+          d3.select(this).transition()
+               .duration('50')
+               .attr('opacity', '1');
+          div.transition()
+               .duration('50')
+               .style("opacity",0);
+      })
+
+      
+
+
+      console.log(g.selectAll('g.node'));
+    }
+  </script>
+</body>
+
+</html>

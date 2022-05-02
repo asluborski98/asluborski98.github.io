@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>2019-2020 Australian Wildfires</title>
+    <script src="https://d3js.org/d3.v4.min.js" charset="utf-8"></script>
+    <script src="https://d3js.org/d3-scale-chromatic.v0.3.min.js"></script>
+    <script src="https://d3js.org/d3-contour.v1.min.js"></script>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+  </head>
+  <style>
+        body {
+      background-color: white;
+      }
+    html, body {
+      height: 100%;
+    }
+
+    .display.centered {
+      display: flex;
+    }
+    .display.centered svg {
+      margin: 0 auto;
+    }
+
+    .range-play {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+    }
+    .range-play input[type="range"] {
+      flex: 1;
+    }
+
+    svg path.geography {
+      fill: rgb(42, 83, 4);
+    }
+
+    svg text {
+      font-weight: 300;
+      font-size: 14px;
+    }
+    svg text.title {
+      font-weight: 400;
+      font-size: 16px;
+    }
+    svg text.subtitle {
+      font-weight: 400;
+    }
+   
+  </style>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-white">
+      <a class="navbar-brand text-black" href="#">2019 - 2020 Australian WildFires Over Time</a>
+    </nav>
+      <div class="row p-3">
+        <div class="col-4">
+          <div class="card bg-dark text-white mt-3">
+            <div class="card-header">
+              <h5 class="card-title mt-2 mb-2">Date Scale Histogram</h5>
+            </div>
+            <div class="list-group list-group-flush">
+              <div>
+                <h6 class="card-subtitle mt-1 mb-2"><label for="date-selection">Date</label>: <span id="current-date"></span></h6>
+                <div class="selector-svg">
+                </div>
+                <div class="range">
+                  <input type="range" min="1" max="100" value="0" class="slider custom-range" id="date-selection">
+                </div>
+              </div>
+
+             
+
+              
+
+              <div class="list-group-item bg-dark">
+                <h6 class="card-subtitle mt-1 mb-2">Data Representation</h6>
+                <fieldset>
+                  <div class="custom-control custom-switch">
+                    <input type="checkbox" id="scatterplot-enabled" class="custom-control-input" checked>
+                    <label class="custom-control-label" for="scatterplot-enabled">Region Points</label>
+                  </div>
+                  <div class="custom-control custom-switch">
+                    <input type="checkbox" id="cdplot-enabled" class="custom-control-input">
+                    <label class="custom-control-label" for="cdplot-enabled">Density</label>
+                  </div>
+                </fieldset>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="display col-8">
+          <div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script >
+      let miniSvg, svg, map, locations, legend, data, entriesByDate, projection, dates, expIntensityScale, intensityScale, frpScale, intervalPlayer, densityScalePow, densityScaleColor;
+const arr = [];
+let mouseDown = false;
+
+function setupDisplaySvg() {
+  svg = d3.select('.display')
+    .append('svg')
+    .attr('width', 800 + 3 * 20 + 200)
+    .attr('height', 600 + 2 * 20);
+
+  map = svg.append('g').attr('transform', `translate(${20}, ${20})`);
+  map.append('text').attr('id', 'date-display-svg');
+  locations = svg.append('g').attr('transform', `translate(${20}, ${20})`);
+  legend = svg.append('g').attr('transform', `translate(${800 + 2 * 20}, ${20})`);
+}
+
+function setupSelectorSvg() {
+  const miniWidth = document.getElementById('date-selection').clientWidth;
+  miniSvg = d3.select('.selector-svg')
+    .append('svg')
+    .attr('width', miniWidth)
+    .attr('height', 100);
+  
+  entriesByDate = dates.map(d => data[d].length);
+
+  const yScale = d3.scaleLinear()
+    .domain(d3.extent(entriesByDate, d => +d))
+    .range([0, 100]);
+  
+  const barWidth = Math.round(miniWidth / entriesByDate.length);
+
+  const selection = miniSvg.selectAll('.date-bar')
+    .data(entriesByDate)
+    .enter();
+
+  selection.append('rect')
+    .attr('class', 'date-bar')
+    .attr('id', (d, i) => `date-bar-${i}`)
+    .attr('x', (d, i) => (i + 1) * barWidth)
+    .attr('y', d => 100 - yScale(d))
+    .attr('height', d => yScale(d))
+    .attr('width', barWidth)
+    .attr('fill', '#dee2e6')
+    .on('mouseup', getInteractiveListener('mouseup'))
+    .on('mouseover', getInteractiveListener('mouseover'))
+    .on('mousedown', getInteractiveListener('mousedown'));
+
+  selection.append('rect')
+    .attr('class', 'date-bar-alt')
+    .attr('id', (d, i) => `date-bar-alt-${i}`)
+    .attr('x', (d, i) => (i + 1) * barWidth)
+    .attr('y', 0)
+    .attr('height', d => 100 - yScale(d))
+    .attr('width', barWidth)
+    .attr('fill', '#343a40')
+    .on('mouseup', getInteractiveListener('mouseup'))
+    .on('mouseover', getInteractiveListener('mouseover'))
+    .on('mousedown', getInteractiveListener('mousedown'));
+}
+
+function updateSelectorSvg() {
+  const currentDateIndex = getCurrentDateIndex() - 1;
+  miniSvg.selectAll('.date-bar').attr('fill', '#dee2e6');
+  miniSvg.selectAll('.date-bar-alt').attr('fill', '#343a40');
+  miniSvg.select(`#date-bar-${currentDateIndex}`).attr('fill', '#007bff')
+  miniSvg.select(`#date-bar-alt-${currentDateIndex}`).attr('fill', '#515961')
+}
+
+function getInteractiveListener(event) {
+  return (d, i) => {
+    if(event == 'mousedown') {
+      mouseDown = true;
+    }
+    if(event == 'mouseup') {
+      mouseDown = false;
+    }
+    
+    if(event != 'mouseover' || (event == 'mouseover' && mouseDown)) {
+      let value = i + 1;
+      d3.select('#date-selection').property('value', value);
+      byDateFires(dates[value], data);
+    }
+  }
+}
+
+function createLegend() {
+  legend.append('text')
+    .attr('transform', `translate(${16}, ${16})`)
+    .attr('class', 'title')
+    .text('Legend')
+    .attr('fill', '#fff');
+  
+  legend.append('text')
+    .attr('transform', `translate(${16}, ${16+ 2 * 16})`)
+    .attr('class', 'subtitle')
+    .text('Brightness')
+    .attr('fill', '#fff');
+  
+  const minColor = expIntensityScale.domain()[0];
+  const maxColor = expIntensityScale.domain()[1];
+  const numElements = 6;
+  let i = 0;
+
+  for(i = 0; i <= numElements; i++) {
+    const value = minColor + i * Math.ceil((maxColor - minColor) / numElements);
+    legend.append('rect')
+      .attr('transform', `translate(${1.5 * 16}, ${16+ (2.5 + i) * 16 + 14})`)
+      .attr('width', 16)
+      .attr('height', 16)
+      .attr('fill', intensityScale(value));
+
+    legend.append('text')
+      .attr('transform', `translate(${3 * 16}, ${16+ (2.5 + i) * 16 + 14})`)
+      .text(value)
+      .attr('fill', '#fff');
+  }
+
+
+
+  let j = 0;
+
+  const minSize = frpScale.domain()[0];
+  const maxSize = frpScale.domain()[1];
+  const numSizeElements = 3;
+  for(j = 0; j <= numSizeElements; j++) {
+    const value = minSize + j * Math.ceil((maxSize - minSize) / numElements);
+
+  }
+  
+  legend.append('rect')
+    .attr('width', 200)
+    .attr('height', 16+ (5 + i + j) * 16 + 2 * 14)
+    .lower()
+}
+
+function onDataLoad(geojson, data_) {
+  data = data_;
+
+  dates = Object.keys(data).filter((x, i, a) => a.indexOf(x) == i).sort();
+  for(let key in data) {
+    data[key] = data[key].map(d => ({ ...d, brightness: parseInt(d.brightness) || 0, coords: [d.longitude, d.latitude] }))
+  }
+
+  d3.select('#date-selection')
+    .attr('min', 0)
+    .attr('max', dates.length - 1)
+    .on('input', function() {
+      byDateFires(dates[+this.value], data);
+    });
+
+  d3.selectAll('input[type="checkbox"]').on('change', () => byDateFires(dates[getCurrentDateIndex()], data));
+
+  projection = d3.geoMercator()
+    .fitSize([800, 600], geojson);
+  
+  expIntensityScale = d3.scalePow()
+    .exponent(5)
+    .domain([300, 507])
+    .range([0, 1]);
+  intensityScale = d3.scaleSequential(d => d3.interpolate('#F8F558', '#E0380A')(expIntensityScale(d)));
+
+  frpScale = d3.scaleLinear()
+    .domain([0, 11200])
+    .range([3, 8]);
+  
+  const geoPath = d3.geoPath()
+    .projection(projection);
+  
+  map.selectAll('path')
+    .data(geojson.features)
+    .enter()
+    .append('path')
+    .attr('class', 'geography')
+    .attr('d', geoPath);
+
+  createLegend()
+  setupSelectorSvg();
+}
+
+function getCurrentDateIndex() {
+  const dateSelection = d3.select('#date-selection');
+  return parseInt(dateSelection.property('value')) + 1;
+}
+
+
+
+
+
+function byDateFires(date, data) {
+  d3.select('#current-date').text(date);
+  d3.select('#date-display-svg').text(date);
+  updateSelectorSvg();
+
+
+  scatterPlot = document.getElementById('scatterplot-enabled').checked;
+  densityPlot = document.getElementById('cdplot-enabled').checked;
+
+  const plotData = data[date];
+
+  drawScatterPlot(plotData, scatterPlot);
+  drawDensityPlot(plotData, densityPlot);
+}
+
+function drawScatterPlot(plotData, shouldDraw) {
+  if(shouldDraw) {
+    const selection = locations.selectAll('.marker')
+      .data(plotData);
+    selection.exit().remove();
+    selection.enter()
+      .append('circle')
+      .attr('class', 'marker')
+      .attr('opacity', 1)
+      .attr('r', d => frpScale(d.frp))
+      .attr('fill', d => intensityScale(d.brightness))
+      .attr('cx', d => projection(d.coords)[0])
+      .attr('cy', d => projection(d.coords)[1]);
+  }
+  else {
+    locations.selectAll('.marker').remove();
+  }
+}
+
+function drawDensityPlot(plotData, shouldDraw) {
+  if(shouldDraw) {
+    const densityData = d3.contourDensity()
+      .x(d => projection(d.coords)[0])
+      .y(d => projection(d.coords)[1])
+      .weight(d => d.brightness)
+      .size([800, 600])(plotData);
+
+    if(!densityScalePow) {
+      densityScalePow = d3.scalePow()
+        .exponent(5)
+        .domain([0, 75])
+        .range([0, 1]);
+      densityScaleColor = d3.interpolate('yellow', 'red')
+    }
+
+    const selection = locations.selectAll('.density')
+      .data(densityData);
+
+    selection.enter()
+      .append('path')
+      .attr('class', 'density')
+      .merge(selection)
+      .attr('d', d3.geoPath())
+      .attr('fill', d => console.log(arr.push(d.value)) || densityScaleColor(densityScalePow(d.value)));
+
+    selection.exit().remove()
+  }
+  else {
+    locations.selectAll('.density').remove();
+  }
+}
+
+setupDisplaySvg();
+
+d3.queue()
+  .defer(d3.json, 'fire_data/australian-states.json')
+  .defer(d3.json, 'fire_data/data.json')
+  .awaitAll((err, results) => {
+    d3.select('#loading').remove();
+    const display = d3.select('.display');
+    display.attr('class', display.attr('class') + ' centered');
+    onDataLoad(results[0], results[1]);
+  });
+
+
+    </script>
+  </body>
+</html>
